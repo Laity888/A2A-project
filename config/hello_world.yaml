@@ -1,0 +1,81 @@
+# Hello World Agent 配置
+# 约定：所有可变参数集中在本文件，代码里不出现硬编码常量。
+
+server:
+  host: 127.0.0.1
+  port: 9999
+  log_level: INFO
+
+agent_card:
+  name: Hello World Agent
+  description: Just a hello world agent
+  version: 0.0.1
+  # 对外可见地址。Docker / 远程部署时必须改成外部可达地址，
+  # 否则客户端拿到的 Agent Card 会指向它自己。
+  public_url: http://127.0.0.1:9999
+  protocol_binding: JSONRPC
+  protocol_version: "1.0"
+  default_input_modes:
+    - text/plain
+  default_output_modes:
+    - text/plain
+  streaming: true
+  skills:
+    - id: echo_bot
+      name: Echo Bot
+      description: An example agent that acknowledges client request and responds with a "Hello World" message.
+      input_modes:
+        - text/plain
+      output_modes:
+        - text/plain
+      tags:
+        - a2a
+        - echo-example
+      examples:
+        - hi
+        - how are you
+  # 认证后才可见的扩展 Agent Card（官方示例同款能力）
+  extended:
+    enabled: true
+    name: Hello World Agent - Extended Edition
+    description: The full-featured hello world agent for authenticated users.
+    version: 0.0.2
+    skills:
+      - id: echo_bot_super_mode
+        name: Echo Bot (Super Mode)
+        description: An extended version of Echo Bot that responds with extra enthusiasm!
+        input_modes:
+          - text/plain
+        output_modes:
+          - text/plain
+        tags:
+          - a2a
+          - echo-example
+          - extended
+        examples:
+          - super hi
+          - give me a super hello
+
+# echo = 官方示例原样（固定回复，不需要 API Key）
+# llm  = 通义千问（DashScope OpenAI 兼容接口）
+executor:
+  mode: llm
+
+llm:
+  provider: dashscope
+  # 阿里云百炼 OpenAI 兼容地址（华北2·北京）
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # 实测账号内可用（免费额度）的备选：deepseek-v4-pro-0813、qwen3.8-2.4t-a95b
+  model: qwen3.8-max
+  # API Key 从环境变量读取，不写进配置文件
+  api_key_env: aliyun_API_KEY
+  temperature: 0.7
+  timeout_seconds: 60
+  system_prompt: |
+    你是一个简洁、友好的客服助手。
+    用中文回答，控制在三句话以内。
+
+# 冒烟客户端设置
+client:
+  # 必须大于模型首次冷启动耗时（实测 qwen3.8-max 首次约 14s）
+  timeout_seconds: 120
