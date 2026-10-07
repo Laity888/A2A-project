@@ -1,0 +1,35 @@
+# 全局共享配置（三 Agent + UI 都读这里）
+# 约定：所有可变参数集中在配置文件，代码里不出现硬编码常量。
+# 连接参数对齐票 04（Milvus）/ 票 08（沿用 VM 已有实例）/ 票 11（超时/重试）。
+
+logging:
+  level: INFO
+
+infra:
+  # Milvus 向量库（票 04：库 a2a_cs_lzs / 集合 cs_kb_lzs）
+  milvus:
+    host: 192.168.88.101
+    port: 19530
+    database: a2a_cs_lzs
+    collection: cs_kb_lzs
+  # MySQL（技术底座预留；具体用途在实现票细化）
+  mysql:
+    host: 192.168.88.101
+    port: 3306
+  # Redis（票 06 §9 会话上下文存储）
+  redis:
+    host: 192.168.88.101
+    port: 6379
+
+llm:
+  provider: dashscope
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  # 实测账号可用（免费额度）：qwen3.8-max / deepseek-v4-pro-0813 / qwen3.8-2.4t-a95b
+  model: qwen3.8-max
+  # API Key 只从环境变量读取，不写进配置文件（票 05 硬约束）
+  api_key_env: aliyun_API_KEY
+  temperature: 0.3
+  # 必须大于模型冷启动耗时（票 05/11）
+  timeout_seconds: 120
+  # 票 11 §4：兜 429/瞬时的指数退避重试次数
+  max_retries: 1

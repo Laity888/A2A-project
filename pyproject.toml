@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "a2a-customer-service"
+version = "0.0.1"
+description = "A2A 客服/工单分流作品集项目"
+requires-python = ">=3.10"
+
+# 依赖版本已在 Python 3.10 环境下实测通过（见 docs/records/hello-world-runbook.md）
+dependencies = [
+    "a2a-sdk[http-server]==1.2.2",
+    "uvicorn==0.54.0",
+    "starlette==1.7.0",
+    "httpx==0.28.1",
+    "openai==3.26.0",
+    "python-dotenv==1.2.4",
+    "pyyaml==6.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hello_world", "src/common", "src/agents"]
+
+[dependency-groups]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.25.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["src"]
+addopts = "-m 'not llm and not e2e'"
+markers = [
+    "llm: 需要打真实大模型（DashScope），默认跳过，需 -m llm 显式跑",
+    "e2e: 端到端（真 LLM + 真 Milvus/Redis 全链路），默认跳过，需 -m e2e 显式跑",
+]
