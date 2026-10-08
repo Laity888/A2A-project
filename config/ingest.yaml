@@ -1,0 +1,33 @@
+# 知识库语料入库配置（工单 02）
+# 切分尺寸 / 模型路径 / Milvus 库集合复用 config/agents/retrieval.yaml + common.yaml；
+# 这里只放「爬取」与「入库」专属参数。不硬编码到代码里。
+
+crawl:
+  base_url: https://ragflow.com.cn
+  sitemap_url: https://ragflow.com.cn/sitemap.xml
+  allow_prefix: /docs            # 只抓 /docs（票 03），不含 /blog
+  exclude_prefixes:
+    - /blog
+    - /docs/category       # 分类索引/导航页，非正文，会污染检索（票 03「扣除分类索引页」）
+  output_dir: data/ragflow_docs  # 相对仓库根；导出 Markdown + manifest.json
+  archive_html: true             # 入库前先把原始网页以 HTML 形式保留到项目内（票 03 复现/来源）
+  html_dir: data/ragflow_docs/html
+  delay_seconds: 0.5             # 礼貌抓取间隔
+  timeout_seconds: 20
+  user_agent: a2a-cs-corpus-builder/0.1 (portfolio dataset build)
+  respect_robots: true
+
+# 主内容选择器（按站点 HTML 结构；实现时确认，找不到就停，不乱猜）
+selectors:
+  content:
+    - "article"
+    - "main"
+    - "[role=main]"
+    - ".md-content"
+    - ".theme-doc-markdown"
+  title:
+    - "h1"
+
+ingest:
+  ensure_database: true          # 库不存在则创建（common.infra.milvus.database）
+  batch_size: 32                 # 每次 upsert 的子块数
