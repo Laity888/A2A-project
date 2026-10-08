@@ -1,0 +1,70 @@
+# 检索 Agent（纯 A2A server）· 票 04 / 06 / 11
+# 混合检索 + 重排参数全部对齐示例项目 edu_rag-main（票 04）。
+
+server:
+  host: 0.0.0.0
+  port: 8002
+  public_url: http://retrieval:8002
+
+agent_card:
+  name: Retrieval Agent
+  description: 知识库检索：Milvus hybrid 召回 + bge-reranker 重排
+  version: 0.0.1
+  protocol_binding: JSONRPC
+  protocol_version: "1.0"
+  default_input_modes:
+    - application/json
+  default_output_modes:
+    - application/json
+  streaming: false
+  skills:
+    - id: kb_retrieval
+      name: KB Retrieval
+      description: 按 query 从知识库返回结构化命中片段（含出处）
+      input_modes:
+        - application/json
+      output_modes:
+        - application/json
+      tags:
+        - rag
+        - retrieval
+
+# 切分与检索参数（票 04）
+retrieval:
+  top_k: 8                 # hybrid 召回数 k（2630 条语料，k=3 太窄，提到 8）
+  rerank_n: 2              # 重排后取 n
+  cache_enabled: true      # 结果缓存：同 (query, top_k) 命中直接返回，省 CPU BGE-M3+rerank
+  cache_max: 256           # 缓存条目上限，超出按 LRU 淘汰
+  parent_chunk_size: 1200
+  child_chunk_size: 300
+  chunk_overlap: 50
+  dense_weight: 1.0        # WeightedRanker(1.0, 0.7)
+  sparse_weight: 0.7
+  dense_nprobe: 10         # IVF 检索探测聚类数
+  index_nlist: 128         # dense IVF_FLAT 聚类数（建索引）
+  index_drop_ratio_build: 0.2  # sparse 倒排建索引丢弃比例
+  embedding_device: cpu
+  # 模型来源（票 08 §5 / 票 11 §7 OOM 兜底）：local | external
+  model_source: local
+  model_dir: /models
+  embedding_model: BAAI/bge-m3
+  reranker_model: BAAI/bge-reranker-large
+  # 本地权重目录（复用 edu_rag-main 已下载的权重，避免重复下载 ~2.2GB）
+  embedding_model_path: D:/App/Python/PyWork/itheima/edu_rag-main/rag_qa/models/bge-m3
+  reranker_model_path: D:/App/Python/PyWork/itheima/edu_rag-main/rag_qa/models/bge-reranker-large
+
+# 语义缓存（第二层，工单：双层缓存）：本 Agent 独有的 query_cache 集合，接待经 A2A 读写。
+# 这里是相似度阈值/TTL/集合名的唯一真相源（接待只决定是否查询）。dense 做 L2 归一化→IP=余弦。
+semantic_cache:
+  enabled: true
+  collection: cs_qc2_lzs          # v2：加 pref_sig 字段（旧 cs_qc_lzs 无此字段，Milvus 不能给已存在集合加标量列 → 换新名自动重建，旧集合可直接删）
+  threshold: 0.90                # 归一化 dense 的 IP(=余弦) 命中阈值
+  ttl_seconds: 86400             # 一天；过期问句不再命中
+  dense_nprobe: 16               # 语义缓存检索参数
+
+# 性能（票 11 §2/§6）
+performance:
+  infer_concurrency: 1     # 进程内信号量限并发推理（6G VM 防 OOM 主闸门）
+  warmup:
+    enabled: true
+    dummy_query: 系统预热
