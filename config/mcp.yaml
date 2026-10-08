@@ -1,0 +1,7 @@
+# MCP 工具服务器配置（工单 11）
+# retrieval_url 指向检索 A2A Agent；A2A_LOCAL=1 时由 common.config.apply_local_override 改写成 127.0.0.1。
+
+mcp:
+  retrieval_url: http://retrieval:8002
+  client_timeout_seconds: 120
+  top_k: 8
