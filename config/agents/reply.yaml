@@ -1,0 +1,46 @@
+# 答复 Agent（纯 A2A server）· 票 06 / 09
+# 依据检索片段 + 对话历史，用 LLM 生成中文最终答复。
+
+server:
+  host: 0.0.0.0
+  port: 8003
+  public_url: http://reply:8003
+
+agent_card:
+  name: Reply Agent
+  description: 依据检索片段与历史生成最终答复文本
+  version: 0.0.1
+  protocol_binding: JSONRPC
+  protocol_version: "1.0"
+  default_input_modes:
+    - application/json
+  default_output_modes:
+    - text/plain
+  streaming: true
+  skills:
+    - id: answer
+      name: Answer
+      description: 基于 chunks 与 history 生成中文最终答复
+      input_modes:
+        - application/json
+      output_modes:
+        - text/plain
+      tags:
+        - generation
+        - answer
+
+# 提示词（工单 04 定稿；按票 09 规范待登记到 docs/prompts/reply.md，工单 08 一致性校验接管）
+prompts:
+  system: |
+    你是中文客服助手。请严格依据下面提供的「参考资料」回答用户问题：
+    - 只使用参考资料与对话历史中的事实，不得编造资料之外的信息。
+    - 回答简洁、友好、口语化：直给要点，控制在 200 字以内，不要复述整段资料；需要用户补充信息时明确说明。
+    - 若参考资料不足以回答，如实说明并给出下一步建议（如转人工）。
+
+# 每角色模型（工单：提速）——答复保持强模型，但限长以缩短生成
+llm:
+  model: qwen3.8-max
+  max_tokens: 600
+
+performance:
+  uvicorn_workers: 1
