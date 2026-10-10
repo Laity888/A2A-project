@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>智能客服 · A2A 调度台</title>
+<style>
+  :root{
+    --stone:#E7E4DC; --paper:#F4F2EC; --ink:#22211D; --muted:#6E6B61;
+    --rule:#D8D4CA; --amber:#9C6B1F; --moss:#4E6B45; --rust:#9C3B2C;
+    --serif:"Songti SC","STSong","Noto Serif SC",Georgia,"Times New Roman",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--stone);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+  .shell{display:flex;height:100vh;width:100%}
+
+  /* 左侧栏：品牌 + 新建会话 + 历史列表 + 当前用户 */
+  .sidebar{width:238px;flex:none;border-right:1px solid var(--rule);background:var(--paper);
+    padding:16px 12px;display:flex;flex-direction:column;gap:12px;min-height:0}
+  .shell.collapsed .sidebar, .shell.collapsed .resizer{display:none}
+  .brand{padding:2px 4px 0}
+  .brand .mark{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:.5px}
+  .brand .tag{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.5px;margin-top:3px}
+  .newbtn{background:var(--ink);color:var(--paper);border:0;border-radius:10px;padding:10px 0;
+    font:inherit;font-weight:600;cursor:pointer;letter-spacing:.3px}
+  .newbtn:hover{background:#000}
+  .convs{overflow:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:3px;margin-top:2px}
+  .convs::-webkit-scrollbar{width:8px}
+  .convs::-webkit-scrollbar-thumb{background:var(--rule);border-radius:8px}
+  .conv{position:relative;padding:9px 30px 9px 11px;border-radius:9px;cursor:pointer;font-size:13.5px;
+    color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid transparent}
+  .conv:hover{background:var(--stone)}
+  .conv.active{background:var(--stone);border-color:var(--rule)}
+  .conv .when{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+  .conv .acts{position:absolute;right:5px;top:8px;display:none;gap:4px}
+  .conv:hover .acts{display:flex}
+  .conv .acts button{background:transparent;border:0;color:var(--muted);cursor:pointer;
+    font-family:var(--mono);font-size:12px;padding:2px 3px;border-radius:5px}
+  .conv .acts button:hover{color:var(--ink);background:var(--paper)}
+  .conv .acts .del:hover{color:var(--rust)}
+  .side-empty{color:var(--muted);font-size:12.5px;text-align:center;margin-top:24px}
+  .userfoot{display:flex;align-items:center;gap:8px;padding-top:10px;border-top:1px solid var(--rule);
+    font-size:13px;color:var(--muted)}
+  .userfoot #who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .userfoot #logout{color:var(--amber);text-decoration:none;flex:none}
+  .userfoot #logout:hover{text-decoration:underline}
+
+  /* 拖拽调宽 */
+  .resizer{width:6px;flex:none;cursor:col-resize;background:transparent}
+  .resizer:hover, .resizer.dragging{background:rgba(156,107,31,.28)}
+
+  .main{flex:1;min-width:0;display:flex}
+  .app{position:relative;left:-30px;flex:1;min-width:0;max-width:860px;margin:0 auto;height:100vh;display:flex;flex-direction:column;padding:22px 20px 20px}
+
+  header{display:flex;align-items:center;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+  .collapse-btn{background:transparent;border:1px solid var(--rule);color:var(--ink);border-radius:8px;
+    width:34px;height:30px;padding:0;font-size:15px;line-height:1;cursor:pointer;flex:none}
+  .collapse-btn:hover{background:var(--stone)}
+  .sub{color:var(--muted);font-size:12.5px}
+
+  .stream{flex:1;min-height:0;overflow:auto;padding:20px 2px 8px;display:flex;flex-direction:column;gap:16px}
+  .stream::-webkit-scrollbar{width:10px}
+  .stream::-webkit-scrollbar-thumb{background:var(--rule);border-radius:10px}
+  .turn{display:flex;flex-direction:column;gap:12px}
+
+  .row{display:flex;flex-direction:column;gap:6px}
+  .row.me{align-items:flex-end}
+  .who{font-family:var(--mono);font-size:10.5px;letter-spacing:.6px;color:var(--muted);text-transform:none}
+  .bubble{max-width:82%;padding:12px 15px;border-radius:14px;white-space:pre-wrap;word-break:break-word}
+  .me .bubble{background:var(--ink);color:var(--paper);border-bottom-right-radius:4px}
+  .agent .bubble{background:var(--paper);border:1px solid var(--rule);border-bottom-left-radius:4px}
+  .agent .bubble.err{border-color:var(--rust);color:var(--rust)}
+  .agent .bubble.md{white-space:normal}
+  .bubble.md h1,.bubble.md h2,.bubble.md h3,.bubble.md h4,.bubble.md h5,.bubble.md h6{
+    font-family:var(--serif);margin:12px 0 6px;line-height:1.35}
+  .bubble.md h1{font-size:18px} .bubble.md h2{font-size:16.5px} .bubble.md h3{font-size:15px}
+  .bubble.md h4,.bubble.md h5,.bubble.md h6{font-size:14px;color:var(--muted)}
+  .bubble.md > :first-child{margin-top:0}
+  .bubble.md > :last-child{margin-bottom:0}
+  .bubble.md p{margin:7px 0}
+  .bubble.md ul,.bubble.md ol{margin:7px 0;padding-left:22px}
+  .bubble.md li{margin:3px 0}
+  .bubble.md code.mdcode{font-family:var(--mono);font-size:.9em;background:rgba(34,33,29,.06);
+    padding:1px 5px;border-radius:5px;overflow-wrap:anywhere}
+  .bubble.md pre.mdpre{font-family:var(--mono);font-size:12.5px;background:rgba(34,33,29,.05);
+    border:1px solid var(--rule);border-radius:9px;padding:10px 12px;margin:9px 0;
+    overflow:auto;white-space:pre;line-height:1.5}
+  .bubble.md blockquote{margin:9px 0;padding:2px 0 2px 12px;border-left:3px solid var(--rule);color:var(--muted)}
+  .bubble.md hr{border:0;border-top:1px solid var(--rule);margin:12px 0}
+  .bubble.md a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(156,107,31,.35)}
+  .bubble.md a:hover{border-bottom-color:var(--amber)}
+  .bubble.md table.mdtable{border-collapse:collapse;display:block;overflow-x:auto;
+    width:max-content;max-width:100%;margin:9px 0;font-size:13px}
+  .bubble.md table.mdtable th,.bubble.md table.mdtable td{border:1px solid var(--rule);
+    padding:6px 10px;text-align:left;overflow-wrap:anywhere}
+  .bubble.md table.mdtable th{background:rgba(34,33,29,.06);font-weight:600}
+  .bubble.md table.mdtable tr:nth-child(even) td{background:rgba(34,33,29,.02)}
+
+  .pill{align-self:flex-start;display:inline-flex;align-items:center;gap:9px;
+    background:var(--paper);border:1px solid var(--rule);border-radius:999px;
+    padding:7px 13px;font-size:12.5px;color:var(--muted)}
+  .pill .dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+  .pill .t{font-family:var(--mono);color:var(--amber);font-variant-numeric:tabular-nums}
+  @media (prefers-reduced-motion:no-preference){
+    .pill .dot{animation:pulse 1.1s ease-in-out infinite}
+  }
+  @keyframes pulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
+
+  /* 发送即出的"客服正在输入"占位打字点 */
+  .tdots{display:inline-flex;gap:5px;align-items:center;padding:3px 0}
+  .tdots i{width:6px;height:6px;border-radius:50%;background:var(--muted);opacity:.35;display:inline-block}
+  @media (prefers-reduced-motion:no-preference){
+    .tdots i{animation:tdot 1.2s infinite ease-in-out}
+    .tdots i:nth-child(2){animation-delay:.15s}
+    .tdots i:nth-child(3){animation-delay:.3s}
+  }
+  @keyframes tdot{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+
+  /* 来源标签条：检索结果一到就出现在答复气泡顶部，填住答复生成前的空窗 */
+  .srcbar{font-size:12px;color:var(--muted);margin:0 0 9px;padding:0 0 8px;
+    border-bottom:1px dashed var(--rule);line-height:1.6;overflow-wrap:anywhere}
+  .srcbar:empty{display:none}
+  .srcbar .srchdr{font-family:var(--mono);letter-spacing:.3px}
+  .srcbar a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(156,107,31,.35)}
+  .srcbar a:hover{border-bottom-color:var(--amber)}
+
+  .trace{align-self:stretch;border:1px solid var(--rule);border-radius:12px;background:var(--paper);overflow:hidden}
+  .trace summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
+    padding:9px 13px;font-family:var(--mono);font-size:11.5px;letter-spacing:.4px;color:var(--muted)}
+  .trace summary::-webkit-details-marker{display:none}
+  .trace summary .chev{transition:transform .18s ease}
+  .trace[open] summary .chev{transform:rotate(90deg)}
+  .trace .body{padding:2px 13px 12px;border-top:1px solid var(--rule)}
+  .trace .kv{display:grid;grid-template-columns:74px minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px dashed var(--rule)}
+  .trace .kv > *{min-width:0}
+  .trace .kv:last-child{border-bottom:0}
+  .trace .k{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .trace .v{font-size:13px;overflow-wrap:anywhere;word-break:break-word}
+  .trace .muted{color:var(--muted);font-size:12px;margin-top:2px;overflow-wrap:anywhere;word-break:break-word}
+  .trace a{color:var(--amber);text-decoration:none;border-bottom:1px solid rgba(156,107,31,.35)}
+  .trace a:hover{border-bottom-color:var(--amber)}
+  .trace .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .ok{color:var(--moss)} .bad{color:var(--rust)}
+
+  .composer{display:flex;gap:10px;padding-top:14px;border-top:1px solid var(--rule)}
+  textarea{flex:1;resize:none;height:54px;background:var(--paper);border:1px solid var(--rule);
+    color:var(--ink);border-radius:12px;padding:13px 15px;font:inherit;outline:none}
+  textarea:focus-visible{border-color:var(--amber);box-shadow:0 0 0 3px rgba(156,107,31,.18)}
+  button{background:var(--ink);color:var(--paper);border:0;border-radius:12px;padding:0 22px;
+    font:inherit;font-weight:600;cursor:pointer;letter-spacing:.3px}
+  .composer .send:hover{background:#000}
+  .composer .send:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(156,107,31,.35)}
+  .composer .send:disabled{opacity:.45;cursor:not-allowed}
+  .empty{margin:auto;text-align:center;color:var(--muted);font-size:13px}
+  .empty .big{font-family:var(--serif);font-size:18px;color:var(--ink);margin-bottom:6px}
+
+  /* 偏好设置：header 齿轮 + 弹窗 */
+  .pref-btn{margin-left:auto;background:transparent;border:1px solid var(--rule);color:var(--muted);
+    border-radius:8px;padding:5px 11px;font-size:12.5px;font-weight:500;cursor:pointer;flex:none}
+  .pref-btn:hover{background:var(--stone);color:var(--ink)}
+  .modal-mask{position:fixed;inset:0;background:rgba(34,33,29,.34);display:none;
+    align-items:center;justify-content:center;z-index:50}
+  .modal-mask.open{display:flex}
+  .modal{background:var(--paper);border:1px solid var(--rule);border-radius:14px;width:min(460px,92vw);
+    max-height:80vh;overflow:auto;padding:20px 22px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+  .modal h3{font-family:var(--serif);margin:0 0 4px;font-size:17px}
+  .modal .hint{color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5}
+  .pref-row{display:flex;gap:8px;margin-bottom:8px}
+  .pref-row input{flex:1;min-width:0;background:var(--stone);border:1px solid var(--rule);border-radius:8px;
+    padding:8px 10px;font:inherit;color:var(--ink);outline:none}
+  .pref-row input.k{max-width:42%}
+  .pref-row input:focus-visible{border-color:var(--amber)}
+  .pref-row .rm{flex:none;width:34px;padding:0;background:transparent;border:1px solid var(--rule);
+    color:var(--muted);border-radius:8px;cursor:pointer;font-weight:400}
+  .pref-row .rm:hover{color:var(--rust);border-color:var(--rust)}
+  .modal .addbtn{background:transparent;color:var(--amber);border:1px dashed var(--rule);
+    border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:500;cursor:pointer}
+  .modal .addbtn:hover{background:var(--stone)}
+  .modal .foot{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .modal .ghost{background:transparent;color:var(--muted);border:1px solid var(--rule);font-weight:500}
+  .modal .ghost:hover{background:var(--stone);color:var(--ink)}
+  .modal .sep{border-top:1px solid var(--rule);margin:18px 0 12px}
+  .modal h4{font-family:var(--serif);margin:0 0 8px;font-size:14px}
+  .hist-list{max-height:180px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+  .hist-item{background:var(--stone);border:1px solid var(--rule);border-radius:9px;padding:7px 10px}
+  .hist-item .q{font-size:13px;color:var(--ink);word-break:break-word}
+  .hist-item .m{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:2px}
+  .hist-empty{color:var(--muted);font-size:12.5px}
+  .hist-actions{display:flex;justify-content:flex-end;margin-top:10px}
+  .confirm-mask{z-index:60}
+  .confirm-modal{width:min(380px,92vw)}
+  .confirm-modal .hint{margin-bottom:0;color:var(--ink);font-size:13.5px;line-height:1.6}
+  .confirm-input{width:100%;box-sizing:border-box;margin-top:12px;background:var(--stone);
+    border:1px solid var(--rule);border-radius:9px;padding:9px 11px;font:inherit;color:var(--ink);outline:none}
+  .confirm-input:focus-visible{border-color:var(--amber);box-shadow:0 0 0 3px rgba(156,107,31,.18)}
+  .modal .danger{background:var(--rust);color:#fff}
+  .modal .danger:hover{background:#7f2e22}
+  @media (max-width:720px){ .sidebar, .resizer{display:none} }
+</style>
+</head>
+<body>
+<div class="shell" id="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="mark">智能客服</div>
+      <div class="tag">A2A · 接待 / 检索 / 答复</div>
+    </div>
+    <button class="newbtn" id="newConv">+ 新建会话</button>
+    <div class="convs" id="convs"></div>
+    <div class="userfoot">
+      <span id="who"></span>
+      <a id="logout" href="#">退出</a>
+    </div>
+  </aside>
+
+  <div class="resizer" id="resizer" title="拖动调整宽度（双击复位）"></div>
+
+  <div class="main">
+    <div class="app">
+      <header>
+        <button class="collapse-btn" id="sideToggle" title="收起 / 展开历史栏">☰</button>
+        <span class="sub">RAGFlow 官方中文文档知识库</span>
+        <button class="pref-btn" id="prefBtn" title="设置你的长期偏好">⚙ 偏好设置</button>
+      </header>
+
+      <div class="stream" id="stream">
+        <div class="empty" id="empty">
+          <div class="big">有什么可以帮你？</div>
+          <div>试试：如何部署 RAGFlow · 文档切片长度怎么设置 · 怎么配置模型 API Key</div>
+        </div>
+      </div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <textarea id="input" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+        <button class="send" id="send" type="submit">发送</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask" id="prefMask">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="记忆与偏好">
+    <h3>记忆与偏好</h3>
+    <div class="hint">长期保存、并在后续回答时提供给客服。键值示例：<code>reply_style = 简洁</code>、<code>deploy_mode = Docker</code>、<code>expertise = 进阶</code>。把某项的值清空后保存即删除该项。</div>
+    <div id="prefRows"></div>
+    <div><button class="addbtn" id="prefAdd" type="button">+ 添加一项</button></div>
+    <div class="sep"></div>
+    <h4>最近咨询</h4>
+    <div class="hist-list" id="histList"></div>
+    <div class="hist-actions"><button class="ghost" id="histClear" type="button">清空历史</button></div>
+    <div class="foot">
+      <button class="ghost" id="prefCancel" type="button">取消</button>
+      <button id="prefSave" type="button">保存偏好</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-mask confirm-mask" id="confirmMask">
+  <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <h3 id="confirmTitle">确认操作</h3>
+    <div class="hint" id="confirmMsg"></div>
+    <input id="confirmInput" class="confirm-input" type="text" hidden autocomplete="off" />
+    <div class="foot">
+      <button class="ghost" id="confirmCancel" type="button">取消</button>
+      <button class="danger" id="confirmOk" type="button">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const stream = document.getElementById('stream');
+  const input  = document.getElementById('input');
+  const send   = document.getElementById('send');
+  const form   = document.getElementById('composer');
+  const convs  = document.getElementById('convs');
+  const newBtn = document.getElementById('newConv');
+  const shell    = document.getElementById('shell');
+  const sidebar  = document.getElementById('sidebar');
+  const resizer  = document.getElementById('resizer');
+  const sideToggle = document.getElementById('sideToggle');
+
+  const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+  const scrollDown = () => { stream.scrollTop = stream.scrollHeight; };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+  const shortUrl = (u) => String(u).replace(/^https?:\/\/[^/]+\//, '');
+  const newConvId = () => 'ui-' + (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Math.random().toString(36).slice(2));
+
+  // ---- 自定义确认 / 输入弹窗（替代浏览器原生 confirm / prompt）----
+  const confirmMask = document.getElementById('confirmMask');
+  const confirmTitle = document.getElementById('confirmTitle');
+  const confirmMsg = document.getElementById('confirmMsg');
+  const confirmInput = document.getElementById('confirmInput');
+  const confirmOk = document.getElementById('confirmOk');
+  const confirmCancel = document.getElementById('confirmCancel');
+  let _confirmResolve = null;
+  let _confirmMode = 'confirm';   // 'confirm' | 'prompt'
+  function _closeConfirm(confirmed) {
+    let val;
+    if (_confirmMode === 'prompt') val = confirmed ? confirmInput.value.trim() : null;
+    else val = confirmed;
+    confirmMask.classList.remove('open');
+    confirmInput.hidden = true;
+    const r = _confirmResolve; _confirmResolve = null;
+    if (r) r(val);
+  }
+  function _openDialog(opts, mode) {
+    const o = opts || {};
+    _confirmMode = mode;
+    confirmTitle.textContent = o.title || (mode === 'prompt' ? '请输入' : '确认操作');
+    confirmMsg.textContent = o.message || '';
+    confirmMsg.style.display = o.message ? '' : 'none';
+    confirmOk.textContent = o.okText || '确认';
+    if (mode === 'prompt') {
+      confirmInput.hidden = false;
+      confirmInput.value = o.value || '';
+      confirmInput.placeholder = o.placeholder || '';
+      setTimeout(() => { confirmInput.focus(); confirmInput.select(); }, 0);
+    } else {
+      confirmInput.hidden = true;
+    }
+    confirmMask.classList.add('open');
+    return new Promise((resolve) => { _confirmResolve = resolve; });
+  }
+  // 确认框：resolve true / false
+  function showConfirm(opts) { return _openDialog(opts, 'confirm'); }
+  // 输入框：resolve 字符串（已 trim）或 null（取消）
+  function showPrompt(opts) { return _openDialog(opts, 'prompt'); }
+  confirmOk.addEventListener('click', () => _closeConfirm(true));
+  confirmCancel.addEventListener('click', () => _closeConfirm(false));
+  confirmMask.addEventListener('click', (e) => { if (e.target === confirmMask) _closeConfirm(false); });
+  confirmInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); _closeConfirm(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); _closeConfirm(false); }
+  });
+
+  let activeConv = null;   // 当前会话 context_id
+
+  // ---- 侧栏：折叠 + 拖拽调宽（记忆到 localStorage）----
+  const LS_W = 'a2a_sb_w', LS_C = 'a2a_sb_collapsed', MINW = 180, MAXW = 460, DEFW = 238;
+  function setWidth(w) {
+    w = Math.max(MINW, Math.min(MAXW, w));
+    sidebar.style.width = w + 'px';
+    try { localStorage.setItem(LS_W, String(w)); } catch (e) {}
+  }
+  function setCollapsed(v) {
+    shell.classList.toggle('collapsed', !!v);
+    try { localStorage.setItem(LS_C, v ? '1' : '0'); } catch (e) {}
+  }
+  try { const w = parseInt(localStorage.getItem(LS_W) || '', 10); if (w) setWidth(w); } catch (e) {}
+  try { if (localStorage.getItem(LS_C) === '1') setCollapsed(true); } catch (e) {}
+  sideToggle.addEventListener('click', () => setCollapsed(!shell.classList.contains('collapsed')));
+  let dragging = false;
+  resizer.addEventListener('mousedown', (e) => {
+    dragging = true; resizer.classList.add('dragging'); document.body.style.userSelect = 'none'; e.preventDefault();
+  });
+  resizer.addEventListener('dblclick', () => setWidth(DEFW));
+  window.addEventListener('mousemove', (e) => { if (dragging) setWidth(e.clientX); });
+  window.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; resizer.classList.remove('dragging'); document.body.style.userSelect = ''; }
+  });
+
+  // ---- 轻量 Markdown（转义优先、无外部依赖；流式每段重渲染）----
+  function renderMarkdown(src) {
+    if (!src) return '';
+    const escH = (s) => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const blocks = [];
+    let t = escH(src);
+    t = t.replace(/```[ \t]*([\w+-]*)\n?([\s\S]*?)```/g, (m, lang, code) => {
+      const i = blocks.push('<pre class="mdpre"><code>' + code.replace(/\n+$/, '') + '</code></pre>') - 1;
+      return '\u0000B' + i + '\u0000';
+    });
+    t = t.replace(/```[ \t]*([\w+-]*)\n?([\s\S]*)$/g, (m, lang, code) => {
+      const i = blocks.push('<pre class="mdpre"><code>' + code + '</code></pre>') - 1;
+      return '\u0000B' + i + '\u0000';
+    });
+    t = t.replace(/`([^`\n]+)`/g, (m, c) => '<code class="mdcode">' + c + '</code>');
+    const inline = (s) => {
+      s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+      return s;
+    };
+    const lines = t.split('\n');
+    let html = '', list = null, buf = [];
+    const flush = () => {
+      if (buf.length) {
+        const tag = list === 'ol' ? 'ol' : 'ul';
+        html += '<' + tag + '>' + buf.map(x => '<li>' + inline(x) + '</li>').join('') + '</' + tag + '>';
+        buf = []; list = null;
+      }
+    };
+    const isRow = (s) => /^\s*\|.*\|\s*$/.test(s);
+    const isDelim = (s) => /^\s*\|?[\s:|-]+\|?\s*$/.test(s) && s.includes('-') && s.includes('|');
+    const splitRow = (s) => { s = s.trim(); if (s.startsWith('|')) s = s.slice(1); if (s.endsWith('|')) s = s.slice(0, -1); return s.split('|').map(c => c.trim()); };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]; let m;
+      const trimmed = line.trim();
+      if (/^\u0000B\d+\u0000$/.test(trimmed)) { flush(); html += trimmed; continue; }
+      if (/^\s*$/.test(line)) { flush(); continue; }
+      else if (isRow(line) && i + 1 < lines.length && isDelim(lines[i + 1])) {
+        flush(); const head = splitRow(line); i++;
+        const body = []; while (i + 1 < lines.length && isRow(lines[i + 1])) { i++; body.push(splitRow(lines[i])); }
+        const thead = '<thead><tr>' + head.map(c => '<th>' + inline(c) + '</th>').join('') + '</tr></thead>';
+        const tbody = body.length ? '<tbody>' + body.map(r => '<tr>' + r.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('') + '</tbody>' : '';
+        html += '<table class="mdtable">' + thead + tbody + '</table>';
+      }
+      else if ((m = /^(#{1,6})\s+(.*)$/.exec(line))) { flush(); const n = m[1].length; html += '<h' + n + '>' + inline(m[2]) + '</h' + n + '>'; }
+      else if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); html += '<hr>'; }
+      else if ((m = /^>\s?(.*)$/.exec(line))) { flush(); html += '<blockquote>' + inline(m[1]) + '</blockquote>'; }
+      else if ((m = /^[-*+]\s+(.*)$/.exec(line))) { if (list && list !== 'ul') flush(); list = 'ul'; buf.push(m[1]); }
+      else if ((m = /^\d+[.)]\s+(.*)$/.exec(line))) { if (list && list !== 'ol') flush(); list = 'ol'; buf.push(m[1]); }
+      else { flush(); html += '<p>' + inline(line) + '</p>'; }
+    }
+    flush();
+    html = html.replace(/\u0000B(\d+)\u0000/g, (m, i) => blocks[+i]);
+    return html;
+  }
+
+  function makePill(label) {
+    const pill = el('div', 'pill');
+    const dot = el('span', 'dot');
+    const txt = el('span'); txt.textContent = label;
+    const t = el('span', 't'); t.textContent = '0.0s';
+    pill.append(dot, txt, t);
+    const t0 = performance.now();
+    const timer = setInterval(() => { t.textContent = ((performance.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
+    return { node: pill, stop() { clearInterval(timer); }, setLabel(s) { txt.textContent = s; } };
+  }
+
+  function renderTrace(trace) {
+    const d = el('details', 'trace');
+    const s = el('summary');
+    const nTools = (trace.tool_calls || []).length;
+    s.innerHTML = '<span class="chev">▸</span> 协作过程 · ' + (trace.cache_hit
+      ? ('命中' + (trace.cache_level === 'semantic' ? '语义' : '') + '缓存 · 跳过检索/生成')
+      : ((nTools ? ('工具 ' + nTools + ' 次') : '无工具') + (trace.retrieval ? (' · 检索 ' + trace.retrieval.count + ' 条') : '')));
+    d.appendChild(s);
+    const body = el('div', 'body');
+    const row = (k, vHtml) => { const kv = el('div', 'kv'); const kk = el('div', 'k'); kk.textContent = k; const vv = el('div', 'v'); vv.innerHTML = vHtml; kv.append(kk, vv); body.appendChild(kv); };
+    row('分流', (trace.is_service ? '<span class="ok">客服问题</span>' : '<span class="bad">非客服</span>') + (trace.intent ? ' · ' + esc(trace.intent) : ''));
+    (trace.tool_calls || []).forEach((tc) => row('工具' + (tc.round ? '·第' + tc.round + '轮' : ''),
+      '<b>' + esc(tc.name) + '</b>' + (tc.args_summary ? '<div class="muted">入参 ' + esc(tc.args_summary) + '</div>' : '') + (tc.result_summary ? '<div class="muted">→ ' + esc(tc.result_summary) + '</div>' : '')));
+    if (trace.retrieval) (trace.retrieval.chunks || []).forEach((c, i) => row('来源' + (i + 1), c.source_url ? '<a href="' + esc(c.source_url) + '" target="_blank" rel="noopener">' + esc(shortUrl(c.source_url)) + '</a>' : esc(c.source || '')));
+    if (trace.timings) {
+      const t = trace.timings;
+      if (trace.cache_hit) row('耗时', '<span class="num">命中缓存 · ' + (t.cache_hit_ms ?? t.scache_ms ?? '-') + 'ms</span>');
+      else {
+        let toolTxt = '工具 ' + (t.react_ms ?? '-') + 'ms';
+        if (t.n_tool_calls != null && (t.react_llm_ms != null || t.react_tool_ms != null)) toolTxt += '（决策 ' + (t.react_llm_ms ?? '-') + 'ms · 检索 ' + (t.react_tool_ms ?? '-') + 'ms · ' + t.n_tool_calls + '次）';
+        row('耗时', '<span class="num">分流 ' + (t.triage_ms ?? '-') + 'ms · ' + toolTxt + ' · 答复 ' + (t.reply_ms ?? '-') + 'ms</span>');
+      }
+    }
+    if (trace.error) row('错误', '<span class="bad">' + esc(trace.error) + '</span>');
+    d.appendChild(body);
+    return d;
+  }
+
+  // ---- 消息渲染 ----
+  function clearStream() {
+    stream.innerHTML = '';
+    const e = el('div', 'empty'); e.id = 'empty';
+    e.innerHTML = '<div class="big">有什么可以帮你？</div><div>试试：如何部署 RAGFlow · 文档切片长度怎么设置 · 怎么配置模型 API Key</div>';
+    stream.appendChild(e);
+  }
+  function removeEmpty() { const e = document.getElementById('empty'); if (e && e.parentNode) e.remove(); }
+
+  function appendUserRow(text) {
+    const turn = el('div', 'turn');
+    const urow = el('div', 'row me');
+    const who = el('div', 'who'); who.textContent = '你';
+    const b = el('div', 'bubble'); b.textContent = text;
+    urow.append(who, b); turn.appendChild(urow);
+    stream.appendChild(turn);
+    return turn;
+  }
+  function renderHistory(messages) {
+    stream.innerHTML = '';
+    (messages || []).forEach((m) => {
+      const turn = el('div', 'turn');
+      const row = el('div', 'row ' + (m.role === 'user' ? 'me' : 'agent'));
+      const who = el('div', 'who'); who.textContent = m.role === 'user' ? '你' : '客服';
+      const b = el('div', m.role === 'user' ? 'bubble' : 'bubble md');
+      if (m.role === 'user') b.textContent = m.text; else b.innerHTML = renderMarkdown(m.text);
+      row.append(who, b); turn.appendChild(row);
+      if (m.role !== 'user' && m.trace) turn.appendChild(renderTrace(m.trace));
+      stream.appendChild(turn);
+    });
+    scrollDown();
+  }
+
+  // ---- 一轮对话（SSE）----
+  async function run(message, turn) {
+    const pill = makePill('正在处理…'); turn.appendChild(pill.node); scrollDown();
+    let rawText = ''; let agentBubble = null, answerEl = null, srcEl = null, errored = false;
+    const stopPill = () => { pill.stop(); if (pill.node.parentNode) pill.node.remove(); };
+    // 发送即出占位气泡（打字点），给出即时"有人在处理"的存在感，不必等首个 token
+    const ensureBubble = () => {
+      if (agentBubble) return;
+      const row = el('div', 'row agent'); const who = el('div', 'who'); who.textContent = '客服';
+      agentBubble = el('div', 'bubble md');
+      srcEl = el('div', 'srcbar');
+      answerEl = el('div', 'answer');
+      answerEl.innerHTML = '<span class="tdots"><i></i><i></i><i></i></span>';
+      agentBubble.append(srcEl, answerEl);
+      row.append(who, agentBubble); turn.appendChild(row); scrollDown();
+    };
+    ensureBubble();
+    // 检索来源一到就在答复气泡顶部渲染"参考 N 篇"，填住答复生成前的空窗
+    const renderSources = (d) => {
+      const list = (d && d.sources) || [];
+      const count = (d && d.count) || list.length;
+      if (!count) return;
+      srcEl.textContent = '';
+      const head = el('span', 'srchdr'); head.textContent = '参考 ' + count + ' 篇 · ';
+      srcEl.appendChild(head);
+      list.slice(0, 5).forEach((s, i) => {
+        if (i) srcEl.appendChild(document.createTextNode(' · '));
+        const label = s.source_url ? shortUrl(s.source_url) : (s.source || s.category || '来源');
+        if (s.source_url) {
+          const a = el('a'); a.href = s.source_url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = label;
+          srcEl.appendChild(a);
+        } else {
+          const span = el('span'); span.textContent = label; srcEl.appendChild(span);
+        }
+      });
+    };
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, context_id: activeConv }), credentials: 'same-origin',
+      });
+      if (resp.status === 401) { window.location.href = '/login'; return; }
+      if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+      const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = '';
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const frames = buf.split('\n\n'); buf = frames.pop();
+        for (const f of frames) {
+          const em = /^event:\s*(.+)$/m.exec(f); const dm = /^data:\s*(.*)$/m.exec(f);
+          if (!em) continue;
+          const ev = em[1].trim(); const data = dm ? JSON.parse(dm[1]) : {};
+          if (ev === 'status') { if (data.message && pill.node.parentNode) pill.setLabel(data.message); }
+          else if (ev === 'sources') { ensureBubble(); renderSources(data.data || data); scrollDown(); }
+          else if (ev === 'token') { rawText += (data.text || ''); ensureBubble(); answerEl.innerHTML = renderMarkdown(rawText); stopPill(); scrollDown(); }
+          else if (ev === 'trace') { turn.appendChild(renderTrace(data.trace || {})); scrollDown(); }
+          else if (ev === 'error') { ensureBubble(); errored = true; agentBubble.classList.add('err'); answerEl.textContent = data.message || '服务暂时不可用，请稍后再试。'; stopPill(); }
+          else if (ev === 'done') { stopPill(); }
+        }
+      }
+    } catch (err) {
+      ensureBubble(); errored = true; agentBubble.classList.add('err');
+      answerEl.textContent = '请求失败：' + ((err && err.message) || err);
+    } finally {
+      stopPill();
+      if (answerEl && !rawText && !errored) { answerEl.textContent = '（没有返回内容）'; }
+    }
+  }
+
+  async function submit(e) {
+    if (e) e.preventDefault();
+    const text = input.value.trim(); if (!text) return;
+    if (!activeConv) activeConv = newConvId();   // 首次发送才落新会话
+    removeEmpty();
+    const turn = appendUserRow(text);
+    input.value = ''; send.disabled = true; scrollDown();
+    try { await run(text, turn); await loadConversations(); }
+    catch (err) { const r = el('div', 'row agent'); const bb = el('div', 'bubble err'); bb.textContent = '请求失败：' + err.message; r.appendChild(bb); turn.appendChild(r); }
+    finally { send.disabled = false; input.focus(); scrollDown(); }
+  }
+
+  // ---- 会话列表 ----
+  const fmtWhen = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts * 1000); const now = new Date();
+    return d.toDateString() === now.toDateString()
+      ? d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+  };
+
+  async function fetchConversations() {
+    const r = await fetch('/api/conversations', { credentials: 'same-origin' });
+    if (r.status === 401) { window.location.href = '/login'; return null; }
+    return (await r.json()).conversations || [];
+  }
+  async function fetchMessages(cid) {
+    try {
+      const r = await fetch('/api/messages?context_id=' + encodeURIComponent(cid), { credentials: 'same-origin' });
+      return (await r.json()).messages || [];
+    } catch (err) { return []; }
+  }
+  function renderConvList(items) {
+    convs.innerHTML = '';
+    if (!items || !items.length) { const e = el('div', 'side-empty'); e.textContent = '还没有历史会话'; convs.appendChild(e); return; }
+    items.forEach((c) => {
+      const node = el('div', 'conv' + (c.context_id === activeConv ? ' active' : ''));
+      const title = el('span'); title.textContent = c.title || '新会话';
+      const when = el('span', 'when'); when.textContent = fmtWhen(c.updated_at);
+      const acts = el('div', 'acts');
+      const rb = el('button'); rb.textContent = '✎'; rb.title = '重命名';
+      const db = el('button', 'del'); db.textContent = '✕'; db.title = '删除';
+      rb.addEventListener('click', (ev) => { ev.stopPropagation(); renameConv(c.context_id, c.title); });
+      db.addEventListener('click', (ev) => { ev.stopPropagation(); deleteConv(c.context_id); });
+      acts.append(rb, db);
+      node.append(title, when, acts);
+      node.addEventListener('click', () => openConversation(c.context_id));
+      convs.appendChild(node);
+    });
+  }
+  async function loadConversations() {
+    let items;
+    try { items = await fetchConversations(); } catch (err) { return; }
+    if (items === null) return;
+    if (!activeConv && items.length) activeConv = items[0].context_id;   // 默认进最近会话
+    renderConvList(items);
+    if (activeConv === (items[0] && items[0].context_id) && !stream.querySelector('.turn')) {
+      const msgs = await fetchMessages(activeConv);
+      if (msgs.length) renderHistory(msgs);
+    }
+  }
+  async function openConversation(cid) {
+    if (!cid) return;
+    activeConv = cid;
+    const msgs = await fetchMessages(cid);
+    msgs.length ? renderHistory(msgs) : clearStream();
+    renderConvList(await fetchConversations() || []);
+  }
+  function startNewConversation() {
+    activeConv = newConvId();
+    clearStream();
+    input.value = ''; input.focus();
+    fetchConversations().then((its) => { if (its != null) renderConvList(its); }).catch(() => {});
+  }
+  async function renameConv(cid, current) {
+    const t = await showPrompt({
+      title: '重命名会话', message: '给这个会话起个名字',
+      value: current || '', placeholder: '会话标题', okText: '保存',
+    });
+    if (t == null) return;
+    const title = t.trim(); if (!title) return;
+    await fetch('/api/conversations/rename', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context_id: cid, title }), credentials: 'same-origin' });
+    renderConvList(await fetchConversations() || []);
+  }
+  async function deleteConv(cid) {
+    const ok = await showConfirm({ title: '删除会话', message: '删除该会话及其历史？此操作不可恢复。', okText: '确认删除' });
+    if (!ok) return;
+    await fetch('/api/conversations/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context_id: cid }), credentials: 'same-origin' });
+    if (cid === activeConv) { activeConv = null; clearStream(); await loadConversations(); }
+    else renderConvList(await fetchConversations() || []);
+  }
+
+  // ---- 偏好设置面板 ----
+  const prefMask = document.getElementById('prefMask');
+  const prefRows = document.getElementById('prefRows');
+  const histList = document.getElementById('histList');
+  function prefRow(k = '', v = '') {
+    const row = el('div', 'pref-row');
+    const ki = document.createElement('input'); ki.className = 'k'; ki.placeholder = '键，如 reply_style'; ki.value = k;
+    const vi = document.createElement('input'); vi.placeholder = '值，如 简洁'; vi.value = v;
+    const rm = el('button', 'rm'); rm.type = 'button'; rm.textContent = '✕'; rm.title = '删除该项';
+    rm.addEventListener('click', () => row.remove());
+    row.append(ki, vi, rm);
+    return row;
+  }
+  async function openPrefs() {
+    prefMask.classList.add('open');
+    prefRows.innerHTML = '';
+    loadHistory();
+    try {
+      const r = await fetch('/api/memory/profile', { credentials: 'same-origin' });
+      if (r.status === 401) { window.location.href = '/login'; return; }
+      if (r.status === 501) { prefRows.appendChild(prefRow()); return; }  // 未启用也留空态
+      const d = await r.json();
+      const prof = d.profile || {};
+      const keys = Object.keys(prof);
+      if (!keys.length) prefRows.appendChild(prefRow());
+      else keys.forEach((k) => prefRows.appendChild(prefRow(k, prof[k])));
+    } catch (e) { prefRows.appendChild(prefRow()); }
+  }
+  async function loadHistory() {
+    histList.innerHTML = '<div class="hist-empty">加载中…</div>';
+    try {
+      const r = await fetch('/api/memory/history?limit=50', { credentials: 'same-origin' });
+      if (r.status !== 200) { histList.innerHTML = '<div class="hist-empty">—</div>'; return; }
+      const items = (await r.json()).history || [];
+      if (!items.length) { histList.innerHTML = '<div class="hist-empty">还没有历史记录</div>'; return; }
+      histList.innerHTML = '';
+      items.forEach((it) => {
+        const node = el('div', 'hist-item');
+        const q = el('div', 'q'); q.textContent = it.query || '';
+        const m = el('div', 'm'); m.textContent = [it.intent, it.time].filter(Boolean).join(' · ') || '—';
+        node.append(q, m);
+        histList.appendChild(node);
+      });
+    } catch (e) { histList.innerHTML = '<div class="hist-empty">—</div>'; }
+  }
+  async function clearHistory() {
+    const ok = await showConfirm({ title: '清空历史', message: '清空全部历史咨询记录？（不影响偏好）', okText: '确认清空' });
+    if (!ok) return;
+    try {
+      await fetch('/api/memory/clear', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope: 'history' }), credentials: 'same-origin',
+      });
+    } catch (e) { /* 忽略，下面重拉会反映真实状态 */ }
+    loadHistory();
+  }
+  function closePrefs() { prefMask.classList.remove('open'); }
+  async function savePrefs() {
+    const out = {};
+    prefRows.querySelectorAll('.pref-row').forEach((row) => {
+      const inputs = row.querySelectorAll('input');
+      const k = (inputs[0].value || '').trim();
+      if (!k) return;
+      out[k] = (inputs[1].value || '').trim();
+    });
+    try {
+      await fetch('/api/memory/profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: out }), credentials: 'same-origin',
+      });
+    } catch (e) { /* 保存失败静默，下次可重试 */ }
+    closePrefs();
+  }
+  document.getElementById('prefBtn').addEventListener('click', openPrefs);
+  document.getElementById('prefAdd').addEventListener('click', () => prefRows.appendChild(prefRow()));
+  document.getElementById('prefCancel').addEventListener('click', closePrefs);
+  document.getElementById('prefSave').addEventListener('click', savePrefs);
+  document.getElementById('histClear').addEventListener('click', clearHistory);
+  prefMask.addEventListener('click', (e) => { if (e.target === prefMask) closePrefs(); });
+
+  form.addEventListener('submit', submit);
+  newBtn.addEventListener('click', startNewConversation);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
+
+  // 身份 + 初始化
+  (function () {
+    const who = document.getElementById('who');
+    const logout = document.getElementById('logout');
+    fetch('/api/me', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!d.authenticated) { window.location.href = '/login'; return; }
+        who.textContent = d.username ? ('你好，' + d.username) : '';
+      })
+      .catch(() => {});
+    if (logout) logout.addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+      window.location.href = '/login';
+    });
+  })();
+
+  loadConversations();
+  input.focus();
+})();
+</script>
+</body>
+</html>

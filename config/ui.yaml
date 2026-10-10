@@ -1,0 +1,49 @@
+# Web UI（BFF + A2A client）· 工单 06 / 票 07
+# FastAPI→改用 Starlette（与 a2a-sdk 锁定的 starlette 1.7 兼容，避免降级冲突）。参数走配置不硬编码。
+
+ui:
+  host: 0.0.0.0
+  port: 8080
+  # 局域网访问总开关（单一开关）：
+  #   true  = UI 绑 0.0.0.0，同网段可访问 http://<本机局域网IP>:8080（还需系统防火墙放行该端口；三个 agent 仍留 127.0.0.1 不暴露）
+  #   false = 仅本机访问（A2A_LOCAL=1 时绑 127.0.0.1）
+  lan_access: true
+  # 接待 Agent 的 A2A base_url（票 08：容器内用 service name；本地直跑改 127.0.0.1）
+  reception_url: http://reception:8001
+  session_cookie: a2a_cs_sid      # 浏览器会话 cookie 名（后端据此维持 context_id）
+  context_prefix: "ui-"           # 生成的 context_id 前缀
+  client_timeout_seconds: 120
+
+  # 多用户隔离身份层：SQL 数据库登录（后端可选 mysql | sqlite），签名 cookie 维持会话
+  auth:
+    enabled: true                 # false 时整套透明放行（user_id=None），供开发/离线测试沿用
+    backend: mysql                # mysql（VM MySQL users 表）| sqlite（本地文件，回退用）
+    cookie: a2a_cs_uid            # 登录态 cookie 名（存签名后的 user_id，与会话 cookie 解耦）
+    token_ttl_seconds: 604800     # 登录有效期（默认 7 天）
+    registration_enabled: true    # 开启自助注册（登录页“注册”标签生效）
+    secret_env: A2A_UI_SECRET     # cookie 签名密钥来源：环境变量名（密钥不落配置文件）
+    # 未设该环境变量时，自动生成并持久化到 data/.auth_secret，保证重启后已发 cookie 仍有效
+
+    # MySQL（VM 上 3306）：口令只从环境变量读，不落配置
+    mysql:
+      host: 192.168.88.101
+      port: 3306
+      database: a2a_cs            # 启动时 CREATE DATABASE IF NOT EXISTS
+      user: root
+      password_env: A2A_MYSQL_PASSWORD
+      table: users                # CREATE TABLE IF NOT EXISTS
+
+    # 内置演示账号（启动时若不存在则灌入）；仅演示用，生产请改强口令并开启注册/RBAC
+    seed_users:
+      - { username: user1, password: "123456" }
+      - { username: user2, password: "123456" }
+      - { username: user3, password: "123456" }
+
+    sqlite_path: data/users.db    # backend=sqlite 时的用户库（相对仓库根；自动建目录/建表）
+
+  # 多会话历史列表（工单：历史对话列表）：复用上面 auth.mysql 的库(a2a_cs)，只是新增两张表
+  conversations:
+    table: conversations          # 会话索引(user_id, context_id, title, created_at, updated_at)
+    message_table: mem_session    # 每会话消息正文（接待写入，BFF 读/删）
+    max_list: 100                 # 列表最多返回会话数
+    message_limit: 200            # 单会话回显最多消息数

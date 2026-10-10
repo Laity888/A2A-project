@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>登录 · 智能客服</title>
+<style>
+  :root{
+    --stone:#E7E4DC; --paper:#F4F2EC; --ink:#22211D; --muted:#6E6B61;
+    --rule:#D8D4CA; --amber:#9C6B1F; --moss:#4E6B45; --rust:#9C3B2C;
+    --serif:"Songti SC","STSong","Noto Serif SC",Georgia,"Times New Roman",serif;
+    --sans:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Cascadia Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--stone);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center}
+  .card{width:360px;max-width:calc(100vw - 40px);background:var(--paper);
+    border:1px solid var(--rule);border-radius:16px;padding:30px 28px 26px;box-shadow:0 12px 40px rgba(34,33,29,.08)}
+  .mark{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:.5px}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:4px}
+  .tabs{display:flex;gap:6px;margin:22px 0 16px;border:1px solid var(--rule);border-radius:10px;padding:4px;background:var(--stone)}
+  .tabs button{flex:1;background:transparent;color:var(--muted);border:0;border-radius:7px;padding:8px 0;
+    font:inherit;font-weight:600;cursor:pointer}
+  .tabs button.active{background:var(--paper);color:var(--ink);box-shadow:0 1px 3px rgba(34,33,29,.1)}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 5px}
+  input{width:100%;background:var(--stone);border:1px solid var(--rule);color:var(--ink);
+    border-radius:10px;padding:11px 13px;font:inherit;outline:none}
+  input:focus-visible{border-color:var(--amber);box-shadow:0 0 0 3px rgba(156,107,31,.18)}
+  .submit{width:100%;margin-top:20px;background:var(--ink);color:var(--paper);border:0;border-radius:10px;
+    padding:12px 0;font:inherit;font-weight:600;cursor:pointer;letter-spacing:.3px}
+  .submit:hover{background:#000}
+  .submit:disabled{opacity:.5;cursor:not-allowed}
+  .msg{margin-top:14px;font-size:13px;min-height:18px}
+  .msg.err{color:var(--rust)} .msg.ok{color:var(--moss)}
+</style>
+</head>
+<body>
+  <form class="card" id="form" autocomplete="off">
+    <div class="mark">智能客服</div>
+    <div class="tag">A2A · 多用户隔离</div>
+
+    <div class="tabs">
+      <button type="button" id="tab-login" class="active">登录</button>
+      <button type="button" id="tab-reg">注册</button>
+    </div>
+
+    <label for="u">用户名</label>
+    <input id="u" name="username" autocomplete="username" required />
+    <label for="p">密码</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required />
+
+    <button class="submit" id="go" type="submit">登录</button>
+    <div class="msg" id="msg"></div>
+  </form>
+
+<script>
+(function () {
+  let mode = "login";
+  const tabLogin = document.getElementById('tab-login');
+  const tabReg   = document.getElementById('tab-reg');
+  const go       = document.getElementById('go');
+  const msg      = document.getElementById('msg');
+  const u        = document.getElementById('u');
+  const p        = document.getElementById('p');
+
+  function setMode(m) {
+    mode = m;
+    tabLogin.classList.toggle('active', m === 'login');
+    tabReg.classList.toggle('active', m === 'reg');
+    go.textContent = m === 'login' ? '登录' : '注册并登录';
+    msg.textContent = ''; msg.className = 'msg';
+  }
+  tabLogin.addEventListener('click', () => setMode('login'));
+  tabReg.addEventListener('click', () => setMode('reg'));
+
+  async function submit(e) {
+    e.preventDefault();
+    go.disabled = true; msg.textContent = ''; msg.className = 'msg';
+    try {
+      const resp = await fetch(mode === 'login' ? '/api/login' : '/api/register', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u.value, password: p.value }),
+        credentials: 'same-origin',
+      });
+      const data = await resp.json();
+      if (resp.ok && data.ok) { window.location.href = '/'; return; }
+      msg.textContent = data.error || '操作失败'; msg.className = 'msg err';
+    } catch (err) {
+      msg.textContent = '请求失败：' + err.message; msg.className = 'msg err';
+    } finally { go.disabled = false; }
+  }
+  document.getElementById('form').addEventListener('submit', submit);
+})();
+</script>
+</body>
+</html>
