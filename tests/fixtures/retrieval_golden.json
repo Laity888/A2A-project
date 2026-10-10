@@ -1,0 +1,18 @@
+[
+  {"question": "如何获取 RAGFlow 的 API Key", "expect": ["acquire_ragflow_api_key"]},
+  {"question": "怎么在本地部署大模型", "expect": ["deploy_local_llm"]},
+  {"question": "如何添加 Google Drive 作为数据源", "expect": ["add_google_drive"]},
+  {"question": "怎么把 Notion 的内容接入 RAGFlow", "expect": ["add_notion"]},
+  {"question": "如何接入 GitHub 仓库", "expect": ["add_github_repo"]},
+  {"question": "怎么导入 Confluence 页面", "expect": ["add_confluence"]},
+  {"question": "如何创建和配置知识库", "expect": ["configure_knowledge_base"]},
+  {"question": "RAGFlow 支持 RAPTOR 吗，怎么开启", "expect": ["enable_raptor"]},
+  {"question": "怎么构建知识图谱", "expect": ["construct_knowledge_graph"]},
+  {"question": "自动元数据提取怎么配置", "expect": ["auto_metadata"]},
+  {"question": "HTTP API 有哪些接口，怎么调用", "expect": ["http_api_reference"]},
+  {"question": "管理员命令行工具有哪些命令", "expect": ["admin_cli"]},
+  {"question": "AI 搜索功能是什么怎么用", "expect": ["ai_search"]},
+  {"question": "有没有电商客服的 agent 示例", "expect": ["ecommerce_customer_support_agent"]},
+  {"question": "怎么搭建数据摄取管道", "expect": ["ingestion_pipeline_quickstart"]},
+  {"question": "agent 组件都有哪些，怎么用", "expect": ["agent_component", "components"]}
+]
