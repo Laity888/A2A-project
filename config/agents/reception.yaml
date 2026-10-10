@@ -1,0 +1,117 @@
+# 接待 Agent（唯一对外入口 + 编排脊柱）· 票 06 / 08 / 11
+# 参数全走配置，不硬编码。
+
+server:
+  host: 0.0.0.0
+  port: 8001
+  # 容器内用 service name（票 08 §2）；本地直跑改 127.0.0.1
+  public_url: http://reception:8001
+
+agent_card:
+  name: Reception Agent
+  description: 客服接待总机：分流判定 + 编排检索与答复 + 会话与兜底
+  version: 0.0.1
+  protocol_binding: JSONRPC
+  protocol_version: "1.0"
+  default_input_modes:
+    - text/plain
+  default_output_modes:
+    - text/plain
+  streaming: true
+  skills:
+    - id: triage
+      name: Triage
+      description: 判定是否客服/工单问题，编排检索与答复，唯一对外入口
+      input_modes:
+        - text/plain
+      output_modes:
+        - text/plain
+      tags:
+        - customer-service
+        - triage
+        - orchestration
+
+# 编排：接待经 MCP 工具 kb_search 调检索、经 ReplyClient 调答复（票 06 §1）
+orchestration:
+  downstream_reply_url: http://reply:8003
+  downstream_retrieval_url: http://retrieval:8002   # 语义缓存(第二层)经 A2A 调检索 Agent
+  client_timeout_seconds: 120    # 对下游 A2A 调用超时（票 05/11）
+
+# 每角色模型覆盖（工单：提速）——分流 + ReAct 路由走快模型；答复仍由 reply 用强模型
+llm:
+  model: deepseek-v4-flash-0731   # 支持 function-calling，分流与 ReAct 决策都用它
+  triage_timeout_seconds: 20      # 分流快速失败：慢响应不再耗满 120s×重试（失败本就保守放行）
+  triage_max_retries: 0
+
+# 会话上下文（票 06 §9；工单：持久化记忆）：接待是唯一有状态者，按 session_key={user_id}:{context_id} 存
+session:
+  backend: mysql                 # mysql（持久化，重启/同会话续上）| memory（离线/回退）| redis（部署）
+  # MySQL 初始化失败会自动退回 memory（接待不因 DB 起不来），读写全程 try/except 降级
+  max_history_rounds: 6          # 每会话读回封顶轮数（与内存 deque 语义一致）
+  ttl_seconds: 3600              # 预留（redis 用）
+  redis_key_prefix: "a2a_cs:ctx:"
+  mysql:
+    host: 192.168.88.101
+    port: 3306
+    database: a2a_cs             # 启动时 CREATE DATABASE IF NOT EXISTS
+    user: root
+    password_env: A2A_MYSQL_PASSWORD   # 口令只从环境变量读
+    table: mem_session           # CREATE TABLE IF NOT EXISTS（首次用时建）
+
+# 性能（票 11 §3）
+performance:
+  uvicorn_workers: 1
+
+# ReAct agent（工单 12）：接待用 function-calling 自主选工具，工具来自 MCP server
+agent:
+  max_steps: 4                   # ReAct 步数上限，防跑飞
+  max_tool_calls: 3              # 单轮工具调用总数硬上限（治过度检索：每次检索都是 CPU 推理）
+  mcp_server_command: ["-m", "mcp_server"]   # 接待作 MCP client 自动拉起的子进程
+  tool_timeout_seconds: 30
+
+# 答案缓存（工单：重复问题省算力）——命中即跳过 triage/ReAct/检索/生成
+answer_cache:
+  enabled: true
+  ttl_seconds: 86400             # 一天；过期自动重算，避免答旧的
+  normalize: true                # 归一化问题文本作 key（去空白/标点+小写），耐问法差异
+  max_entries: 512               # LRU 上限，防无界增长
+  scope: user                    # user（按 user_id 隔离，多用户默认）| global（跨用户共享，命中率最高）
+
+# 语义缓存（第二层，工单：双层缓存）：接待经 A2A 让检索 Agent 在 query_cache 上做稠密相似命中。
+# 相似度阈值/TTL/集合名在服务端(retrieval)统一配置；接待这里只管“要不要查 + 客户端超时”。
+semantic_cache:
+  enabled: true                  # false 则退回单层（仅进程内精确答案缓存）
+  timeout_seconds: 15            # 对检索 Agent 语义缓存读/写的超时（超时/异常自动降级为未命中）
+
+# 长期记忆 & 用户偏好（工单：长期记忆+用户偏好，轻量结构化版）：
+# 偏好=user_profiles(KV，永久)；长期记忆=query_history(跨会话意图/问题滚动流水)。
+# 与语义缓存(cs_qc_lzs)不同：这里记「关于用户」，非「问题→答案」。全程 try/except 降级，连不上库则功能关闭。
+memory:
+  enabled: true                  # false 则完全关闭偏好注入 + 历史流水
+  history_limit: 20              # query_history 读取封顶（滚动窗口，表里不删旧行）
+  inject_recent: 5               # 注入答复提示词的「最近咨询」条数（控上下文，别撑大 flash 输入）
+  profile_table: user_profiles
+  history_table: query_history
+  mysql:                         # 复用 session 同一套 VM MySQL（同库 a2a_cs，口令只从 env 读）
+    host: 192.168.88.101
+    port: 3306
+    database: a2a_cs
+    user: root
+    password_env: A2A_MYSQL_PASSWORD
+
+# 提示词（工单 05 定分流/兜底，工单 12 加 agent；均登记 docs/prompts 受一致性校验）
+prompts:
+  triage: |
+    你是客服意图分类器，把用户输入分到四类之一，严格只输出一行 JSON，禁止输出任何解释、答案、前后缀或 Markdown：
+    {"intent": "chitchat|knowledge|transaction|out_of_scope", "confidence": 0.9, "reason": "一句话理由"}
+    判定标准：chitchat=寒暄/问候/闲聊且与产品无关(如"哈喽""你是谁""谢谢")；knowledge=产品使用/配置/报错等需查知识库的专业咨询；transaction=下单/查订单/退款/转人工等业务操作；out_of_scope=与客服完全无关的越界请求。
+    一句里既有寒暄又有实质问题时按实质部分判(如"你好，我想问部署"→knowledge)；拿不准时倾向 knowledge。
+  agent: |
+    你是客服调度 agent。你可以调用提供的工具来回答问题：
+    - 涉及产品使用/配置/报错等知识问题，用 kb_search 检索知识库；
+    - 需要下单/查订单/转人工时，用对应工具；
+    - 每个子问题只检索一次，整轮最多检索 2 次：不要用相同或近似的问题重复调用 kb_search；
+    - 信息足够后立即停止调用工具，交由系统生成最终答复。
+    每次只调用必要的工具，不要编造工具没有返回的事实。
+  fallback_reply: |
+    抱歉，我目前只能处理客服/工单相关的问题。
