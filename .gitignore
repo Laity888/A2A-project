@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.pytest_cache/
+data/
+logs/
+.idea/
+.vscode/
+# 本地会话/工具产物，不入库
+a2a.json
+1.3.3
